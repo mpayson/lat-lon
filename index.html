@@ -34,13 +34,44 @@
 
   <script>
     require([
+        "esri/identity/OAuthInfo",
+        "esri/identity/IdentityManager",
+        "esri/WebMap",
+        "esri/layers/FeatureLayer",
         "esri/Map",
         "esri/views/MapView",
         "esri/Graphic",
         "esri/widgets/Search",
         "esri/widgets/BasemapToggle"
       ],
-      function(Map, MapView, Graphic, Search, BasemapToggle) {
+      function(OAuthInfo, esriId, WebMap, FeatureLayer, Map, MapView, Graphic, Search, BasemapToggle) {
+
+      /****************************************************
+         * Initialize OAuth / Login
+      ****************************************************/
+      
+        const portalUrl = "https://www.arcgis.com/sharing";
+        var info = new OAuthInfo({
+          appId: "WwNy6bnHK2YboEpE"
+        });
+        esriId.registerOAuthInfos([info]);
+        
+        const signInBtn = document.getElementById("sign-in");
+
+        signInBtn.addEventListener("click", _ => {
+          esriId.getCredential(portalUrl);
+        }); 
+
+        esriId.checkSignInStatus(portalUrl).then((cred) => {
+          if(cred && cred.userId){
+            signInBtn.innerText = cred.userId;
+          }
+        });
+
+      /****************************************************
+         * Constants and constant functions
+      ****************************************************/
+        
         const sigs = 5;
         let pin;
 
@@ -59,7 +90,11 @@
         }
         const getCoordText = (lat, lon) => `[${lon.toFixed(sigs)}, ${lat.toFixed(sigs)}]`;
         const getZoomText = (zoom, scale) => `<b>Zoom:</b> ${zoom.toFixed(0)} <b>Scale:</b> 1:${scale.toFixed(0)}`
+        
 
+        /****************************************************
+          * Load the map and helpful widgets
+        ****************************************************/
         const map = new Map({
           basemap: "topo-vector"
         });
@@ -86,10 +121,60 @@
         const coordTextEl = document.getElementById('coordText');
         const zoomTextEl = document.getElementById('zoomText');
         const textContainer = document.getElementById('textContainer');
+        const dataContainer = document.getElementById('data-form');
         
         view.ui.add(textContainer, {position: "top-left", index: 0})
-        view.ui.add(searchWidget, "top-right");
+        view.ui.add([dataContainer, searchWidget], "top-right");
         view.ui.add(toggle, 'bottom-right');
+
+        /****************************************************
+          * Listeners for adding custom data
+        ****************************************************/
+        
+        // When a user adds a webmap by id
+        // Load it then zoom to its extent
+        const mapAddBtn = document.getElementById('map-add');
+        const mapTextBtn = document.getElementById('map-id');
+        mapAddBtn.addEventListener("click", _ => {
+          const id = mapTextBtn.value;
+          if(!id) return;
+          map = new WebMap({
+            portalItem: {id: id}
+          });
+          view.map = map;
+          map.when(() => {
+            view.viewpoint = map.initialViewProperties.viewpoint;
+            map.remove(polygonGraphicsLayer);
+            map.add(polygonGraphicsLayer);
+          })
+          .catch(er => console.log(er));
+        });
+
+        const lyrAddBtn = document.getElementById('layer-add');
+        const lyrTextBtn = document.getElementById('lyr-id');
+        let lyr;
+        lyrAddBtn.addEventListener("click", _ => {
+          const id = lyrTextBtn.value;
+          if(!id) return;
+          lyr = new FeatureLayer({
+            portalItem: {id: id}
+          });
+          map.add(lyr);
+
+          lyr.queryExtent().then(res => {
+            view.goTo(res.extent);
+          }).catch(e => {
+            console.log(e)
+          });
+
+        });
+
+
+
+        /****************************************************
+          * Listen for events and update the text
+        ****************************************************/
+
 
         function updateText(point) {
           latlonEl.innerHTML = getLatLonText(point.latitude, point.longitude);
@@ -129,19 +214,47 @@
           updateZoom(view.zoom, view.scale);
         })
         
-
-        view.when(() => textContainer.classList.remove('hide'))
+        view.when(() => {
+          textContainer.classList.remove('hide');
+          dataContainer.classList.remove('hide');
+        });
 
       });
   </script>
 </head>
 <body>
+  <header class="top-nav">
+      <nav class="class-top-nav-list" role="navigation" aria-labelledby="usernav">
+        <a class="top-nav-title margin-left-1">Lat Lon</a>
+        <a id="sign-in" class="top-nav-link icon-ui-user margin-right-1 right" href="#">Sign In</a>
+      </nav>
+  </header>
   <div id="viewDiv"></div>
   <div id="textContainer" class="hide">
     <p class="avenir-italic font-size--3 no-marg">Move to get coordinates, click to lock a location</p>
     <p id="latlonText" class="no-marg"><b>Lat</b>: --.------ <b>Lon</b>: --.------</p>
     <p id="zoomText" class="no-marg"><b>Zoom:</b> -- <b>Scale:</b> --------.</p>
     <p id="coordText" class="no-marg">[--.------, --.------]</p>
+  </div>
+  <div class="esri-widget hide" style="padding: 10px; width: 250px" id="data-form">  
+    <label>
+      Add a webmap
+      <div class="input-group">
+        <input class="input-group-input" type="text" placeholder="ArcGIS Online Item ID" id="map-id"/>
+        <span class="input-group-button">
+          <button class="btn" id="map-add">+</button>
+        </span>
+      </div>
+    </label>
+    <label>
+      Add a layer
+      <div class="input-group">
+        <input id="lyr-id" class="input-group-input" type="text" placeholder="ArcGIS Online Item ID"/>
+        <span class="input-group-button">
+          <button class="btn" id="layer-add">+</button>
+        </span>
+      </div>
+    </label>
   </div>
 </body>
 </html>
